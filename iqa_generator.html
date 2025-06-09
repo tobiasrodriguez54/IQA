@@ -2,10 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>IQA Checksum</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/bwip-js@3.3.0/browser-bwipjs.min.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -17,7 +15,7 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      height: 100vh;
+      min-height: 100vh;
     }
     .container {
       width: 90%;
@@ -41,6 +39,8 @@
       border-radius: 4px;
       box-sizing: border-box;
       transition: all 0.3s ease;
+      font-family: monospace;
+      font-size: 14px;
     }
     textarea:focus {
       border-color: #007bff;
@@ -52,6 +52,7 @@
       cursor: pointer;
       border: none;
       transition: background-color 0.3s;
+      font-weight: bold;
     }
     button:hover {
       background-color: #0056b3;
@@ -65,6 +66,8 @@
       font-family: 'Courier New', Courier, monospace;
       white-space: pre-wrap;
       color: #333;
+      max-height: 200px;
+      overflow-y: auto;
     }
     #engineInfo {
       font-size: 16px;
@@ -81,16 +84,17 @@
 <body>
   <div class="container">
     <h1>IQA Checksum</h1>
-    <textarea id="inputString" placeholder="Enter input string"></textarea><br>
+    <textarea id="inputString" rows="6" placeholder="Paste input string here"></textarea>
     <button onclick="identifyEngine()">Check</button>
     <div id="engineInfo"></div>
     <div id="results"></div>
     <div id="qrCodeResult"></div>
   </div>
 
-  <script>
-    let hexContent = '';
+  <!-- Load bwip-js from unpkg CDN -->
+  <script src="https://unpkg.com/bwip-js@3.3.0/browser-bwipjs.min.js"></script>
 
+  <script>
     function calculateChecksum(data) {
       let sum = 0;
       for (let i = 0; i < data.length; i += 2) {
@@ -155,71 +159,98 @@
       let serialNumber = '';
       let engineCode = '';
 
-      // Try Panther
-      for (const marker of pantherMarkers) {
-        if (inputString.includes(marker)) {
-          engineType = 'Panther';
-          const markerIndex = inputString.indexOf(marker);
-          engineCode = marker;
-
-          // Extract candidate serial from first 'T' rule
-          const tIndex = inputString.indexOf('T');
-          let candidateSerial = '';
-          if (tIndex !== -1 && inputString.length >= tIndex + 17) {
-            candidateSerial = inputString.substr(tIndex + 1, 16);
-          }
-
-          // If input starts with CSEPA, serial number = first 16 chars of entire input
-          if (inputString.startsWith('CSEPA')) {
-            serialNumber = inputString.substr(0, 16);
-          } else {
-            serialNumber = candidateSerial;
-          }
-
-          // Extract segments (4 segments of 16 chars each after marker)
-          let relevantPart = inputString.substring(markerIndex + marker.length);
-          relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
-          const allSegments = relevantPart.match(/.{16}/g) || [];
-          segments = allSegments.slice(0, 4);
-          if (segments.length !== 4 || !segments.every(seg => seg.length === 16)) {
-            resultsDiv.innerHTML = "Invalid Panther input: Requires 4 segments of 16 characters each.";
-            return;
-          }
-          break;
-        }
+      // Function to extract serial number for Lion and Panther (default)
+      function extractSerialFromT(str) {
+        const tIndex = str.indexOf('T');
+        if (tIndex === -1 || tIndex + 17 > str.length) return null;
+        return str.substring(tIndex + 1, tIndex + 17);
       }
 
-      // Try Lion
-      if (!engineType) {
-        for (const marker of lionMarkers) {
+      // Check for Panther start with CSEPA serial rule
+      if (inputString.startsWith('CSEPA') && inputString.length >= 16) {
+        engineType = 'Panther';
+        serialNumber = inputString.substring(0, 16);
+        // Try to find marker after serial to extract segments
+        let foundMarker = null;
+        for (const marker of pantherMarkers) {
           if (inputString.includes(marker)) {
-            engineType = 'Lion';
-            const zIndex = inputString.indexOf('Z');
-            const markerIndex = inputString.indexOf(marker);
+            foundMarker = marker;
+            break;
+          }
+        }
+        if (!foundMarker) {
+          resultsDiv.innerHTML = 'No valid Panther engine code marker found.';
+          engineInfoDiv.innerHTML = '';
+          return;
+        }
+        engineCode = foundMarker;
+        // Extract segments after marker
+        const markerIndex = inputString.indexOf(foundMarker);
+        let relevantPart = inputString.substring(markerIndex + foundMarker.length);
+        relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
+        const allSegments = relevantPart.match(/.{16}/g) || [];
+        segments = allSegments.slice(0, 4);
+        if (segments.length !== 4 || !segments.every(seg => seg.length === 16)) {
+          resultsDiv.innerHTML = "Invalid Panther input: Requires 4 segments of 16 characters each.";
+          engineInfoDiv.innerHTML = '';
+          return;
+        }
+      } else {
+        // Try Panther by markers (default serial extraction from 'T')
+        for (const marker of pantherMarkers) {
+          if (inputString.includes(marker)) {
+            engineType = 'Panther';
             engineCode = marker;
-
-            // Serial number after first 'T'
-            const tIndex = inputString.indexOf('T');
-            if (tIndex !== -1 && inputString.length >= tIndex + 17) {
-              serialNumber = inputString.substr(tIndex + 1, 16);
-            } else {
-              resultsDiv.innerHTML = "Invalid Lion input: Cannot extract serial number.";
+            serialNumber = extractSerialFromT(inputString);
+            if (!serialNumber) {
+              resultsDiv.innerHTML = "Could not extract serial number after 'T' for Panther.";
+              engineInfoDiv.innerHTML = '';
               return;
             }
+            // Extract segments
+            const markerIndex = inputString.indexOf(marker);
+            let relevantPart = inputString.substring(markerIndex + marker.length);
+            relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
+            const allSegments = relevantPart.match(/.{16}/g) || [];
+            segments = allSegments.slice(0, 4);
+            if (segments.length !== 4 || !segments.every(seg => seg.length === 16)) {
+              resultsDiv.innerHTML = "Invalid Panther input: Requires 4 segments of 16 characters each.";
+              engineInfoDiv.innerHTML = '';
+              return;
+            }
+            break;
+          }
+        }
 
-            if (zIndex !== -1) {
+        // Try Lion
+        if (!engineType) {
+          for (const marker of lionMarkers) {
+            if (inputString.includes(marker)) {
+              engineType = 'Lion';
+              engineCode = marker;
+              serialNumber = extractSerialFromT(inputString);
+              if (!serialNumber) {
+                resultsDiv.innerHTML = "Could not extract serial number after 'T' for Lion.";
+                engineInfoDiv.innerHTML = '';
+                return;
+              }
+              // Find 'Z' for Lion segments
+              const zIndex = inputString.indexOf('Z');
+              if (zIndex === -1) {
+                resultsDiv.innerHTML = "Invalid Lion input: 'Z' not found.";
+                engineInfoDiv.innerHTML = '';
+                return;
+              }
               const remainingString = inputString.substring(zIndex + 1);
               const allSegments = remainingString.match(/.{16}/g) || [];
               segments = allSegments.slice(0, 6);
               if (segments.length !== 6 || !segments.every(seg => seg.length === 16)) {
                 resultsDiv.innerHTML = "Invalid Lion input: Requires 6 segments of 16 characters each.";
+                engineInfoDiv.innerHTML = '';
                 return;
               }
-            } else {
-              resultsDiv.innerHTML = "Invalid Lion input: 'Z' not found.";
-              return;
+              break;
             }
-            break;
           }
         }
       }
@@ -234,15 +265,15 @@
           output += `${dataRecord}${checksum}\n`;
         });
         output += ':00000001FF';
-        hexContent = output;
+
         engineInfoDiv.innerHTML = `Engine Type: ${engineType} (Valid)<br>Engine Code: ${engineCode}<br>Serial Number: ${serialNumber}`;
         resultsDiv.innerHTML = `<pre>${output}</pre>`;
 
-        // Generate QR
         generateQRCode(engineType, serialNumber, segments, engineCode);
       } else {
         engineInfoDiv.innerHTML = '';
         resultsDiv.innerHTML = "Engine type not identified (no valid markers found).";
+        document.getElementById('qrCodeResult').innerHTML = '';
       }
     }
   </script>
