@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Home - Select App</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #00274d;
+      color: #00274d;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .container {
+      width: 90%;
+      max-width: 400px;
+      background: #fff;
+      padding: 30px 20px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.2);
+      border-radius: 8px;
+      text-align: center;
+    }
+    h1 {
+      color: #00274d;
+      margin-bottom: 30px;
+      font-weight: normal;
+    }
+    button {
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      border: none;
+      padding: 15px 30px;
+      margin: 10px;
+      border-radius: 6px;
+      font-size: 18px;
+      width: 100%;
+      max-width: 250px;
+      transition: background-color 0.3s;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Select Application</h1>
+    <button onclick="location.href='qr_generator.html'">QR generator</button>
+    <button onclick="location.href='iqa_generator.html'">IQA generator</button>
+  </div>
+</body>
+</html>
