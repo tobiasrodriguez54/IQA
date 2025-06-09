@@ -1,281 +1,219 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>IQA Checksum</title>
-  <style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IQA Checksum Data Matrix Generator</title>
+<script src="https://cdn.jsdelivr.net/npm/bwip-js/dist/bwip-js-min.js"></script>
+<style>
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin: 0;
-      padding: 0;
-      background-color: #00274d;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        background: #f5f5f5;
     }
+    h1 { text-align:center; }
     .container {
-      width: 90%;
-      max-width: 600px;
-      background: #fff;
-      padding: 20px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.2);
-      border-radius: 8px;
-      margin-bottom: 20px;
-      color: #333;
+        max-width: 600px;
+        margin: auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px #ccc;
     }
-    h1 {
-      text-align: center;
-      color: #00274d;
-    }
-    textarea, button {
-      width: 100%;
-      padding: 10px;
-      margin: 10px 0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-      transition: all 0.3s ease;
-      font-family: monospace;
-      font-size: 14px;
-    }
-    textarea:focus {
-      border-color: #007bff;
-      outline: none;
+    label, select, textarea, input, button {
+        width: 100%;
+        margin-top: 10px;
+        font-size: 1rem;
     }
     button {
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-      border: none;
-      transition: background-color 0.3s;
-      font-weight: bold;
+        margin-top: 20px;
+        padding: 10px;
+        cursor: pointer;
     }
-    button:hover {
-      background-color: #0056b3;
+    #qrResult {
+        margin-top: 20px;
+        text-align: center;
     }
-    #results {
-      margin-top: 20px;
-      padding: 15px;
-      background: #f9f9f9;
-      border-radius: 4px;
-      border: 1px solid #eee;
-      font-family: 'Courier New', Courier, monospace;
-      white-space: pre-wrap;
-      color: #333;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    #engineInfo {
-      font-size: 16px;
-      color: #00274d;
-      margin-bottom: 10px;
-      text-align: center;
-    }
-    #qrCodeResult {
-      text-align: center;
-      margin-top: 20px;
-    }
-  </style>
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>IQA Checksum</h1>
-    <textarea id="inputString" rows="6" placeholder="Paste input string here"></textarea>
-    <button onclick="identifyEngine()">Check</button>
-    <div id="engineInfo"></div>
-    <div id="results"></div>
-    <div id="qrCodeResult"></div>
-  </div>
+<div class="container">
+    <h1>IQA Checksum Data Matrix Generator</h1>
 
-  <!-- Load bwip-js from unpkg CDN -->
-  <script src="https://unpkg.com/bwip-js@3.3.0/browser-bwipjs.min.js"></script>
+    <label>
+      Engine Type:
+      <select id="engineType" onchange="populateEngineCodes()">
+        <option value="panther" selected>Panther</option>
+        <option value="lion">Lion</option>
+      </select>
+    </label>
 
-  <script>
-    function calculateChecksum(data) {
-      let sum = 0;
-      for (let i = 0; i < data.length; i += 2) {
-        const byte = parseInt(data.substring(i, i + 2), 16);
-        sum += byte;
-      }
-      const checksum = (256 - (sum % 256)) % 256;
-      return checksum.toString(16).toUpperCase().padStart(2, '0');
+    <label>
+      Engine Code:
+      <select id="engineCode"></select>
+    </label>
+
+    <label>
+      Raw Input String:
+      <textarea id="rawInput" rows="6" placeholder="Paste full input string here"></textarea>
+    </label>
+
+    <button onclick="generateDataMatrix()">Generate Data Matrix</button>
+
+    <div id="qrResult"></div>
+</div>
+
+<script>
+// Populate engine codes depending on type
+function populateEngineCodes() {
+    const engineType = document.getElementById('engineType').value;
+    const engineCodeSelect = document.getElementById('engineCode');
+    engineCodeSelect.innerHTML = '';
+
+    let codes = [];
+    if (engineType === 'lion') {
+        codes = ['FA', 'FB'];
+    } else {
+        codes = ['ARA', 'AMA', 'ANA', 'CB', 'DB', 'LB', 'MB'];
+    }
+    codes.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        engineCodeSelect.appendChild(opt);
+    });
+}
+
+// Extract serial number from raw string according to rules
+function extractSerialNumber(raw, engineType) {
+    if (!raw) return null;
+
+    if (engineType === 'panther' && raw.startsWith('CSEPA')) {
+        // Serial is first 16 chars including CSEPA
+        return raw.substr(0, 16);
     }
 
-    function generateQRCode(engineType, serialNumber, segments, engineCode) {
-      const RS = String.fromCharCode(30);
-      const GS = String.fromCharCode(29);
-      const EOT = String.fromCharCode(4);
-      const prefix = '[)>' + RS + '06' + GS + '1T';
+    // Otherwise, find first 'T' and take next 16 chars after it
+    const tIndex = raw.indexOf('T');
+    if (tIndex === -1 || raw.length < tIndex + 1 + 16) {
+        return null;
+    }
+    return raw.substr(tIndex + 1, 16);
+}
 
-      if (serialNumber.length !== 16) {
-        alert("Serial number should be exactly 16 characters.");
+// Parse segments of 16 chars from the input data part
+// Expected lines depends on engine type (4 Panther, 6 Lion)
+function parseSegments(rawText, expectedCount) {
+    if (!rawText) return null;
+
+    // Split lines, trim, filter empties
+    const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    // We want exactly expectedCount lines with segment data (excluding header/footer lines)
+    if (lines.length < 2) return null;
+
+    const middleLines = lines.slice(1, lines.length - 1);
+    if (middleLines.length !== expectedCount) return null;
+
+    // Extract 16 chars from position 8 (0-based) for each middle line
+    const segments = middleLines.map(line => {
+        if (line.length < 24) return null; // must have at least 8 + 16 chars
+        return line.substr(8, 16);
+    });
+
+    if (segments.some(s => s === null)) return null;
+
+    return segments;
+}
+
+function sanitizeText(text) {
+    // Remove non-printable ASCII chars except space (32-126)
+    return text.replace(/[^\x20-\x7E]/g, '');
+}
+
+function generateDataMatrix() {
+    const RS = String.fromCharCode(30);
+    const GS = String.fromCharCode(29);
+    const EOT = String.fromCharCode(4);
+
+    const engineType = document.getElementById('engineType').value;
+    const engineCode = document.getElementById('engineCode').value;
+    const rawInput = document.getElementById('rawInput').value;
+
+    // Extract serial number based on rules
+    const serialNumber = extractSerialNumber(rawInput, engineType);
+    if (!serialNumber || serialNumber.length !== 16) {
+        alert('Error: Could not extract valid 16-character serial number based on rules.');
         return;
-      }
+    }
 
-      let segmentsData = segments.map(s => s.replace(/[^A-Fa-f0-9]/g, '')).join('');
-      let faFbPortion = ` ${engineCode}`;
-      let qrData = `${prefix}${serialNumber}      RB3Q 6007${faFbPortion}    ${GS}9SIQA.V6.1${GS}12Z${segmentsData}${RS}${EOT}`;
+    // Parse segment data: the input includes the whole string, but we expect segment data in lines after header/footer
+    // Extract segment data from the rawInput (assuming pasted whole string), so let's extract text after GS char '' (char 29) + "12Z"
+    // But for simplicity, let's assume user pastes the segment lines only in rawInput or full string and we split by lines below.
 
-      const qrCodeResult = document.getElementById('qrCodeResult');
-      qrCodeResult.innerHTML = '';
-      const canvas = document.createElement('canvas');
-      qrCodeResult.appendChild(canvas);
+    // We'll try to find the segment lines by splitting input by newlines; if none, try to parse from raw string after "12Z"
 
-      try {
+    // Detect number of expected segments
+    const expectedSegments = engineType === 'lion' ? 6 : 4;
+
+    // Try parsing segments from lines:
+    let segments = parseSegments(rawInput, expectedSegments);
+
+    if (!segments) {
+        alert(`Error: Could not parse ${expectedSegments} segments of 16 characters each from the input lines.`);
+        return;
+    }
+
+    // Sanitize segments and join
+    const segmentsData = segments.map(sanitizeText).join('');
+
+    // Construct IQA Data Matrix string exactly as your spec:
+    // Format:
+    // [)> RS 06 GS 1T + serialNumber + "      RB3Q 6007" + " " + engineCode + "    " + GS + "9SIQA.V6.1" + GS + "12Z" + segmentsData + RS + EOT
+
+    // Note: spaces exactly as shown, total 6 spaces after serialNumber before RB3Q
+
+    const qrData = '[)>' + RS + '06' + GS + '1T' +
+        serialNumber +
+        '      ' + // 6 spaces
+        'RB3Q 6007' +
+        ' ' + engineCode +
+        '    ' + // 4 spaces
+        GS +
+        '9SIQA.V6.1' +
+        GS +
+        '12Z' +
+        segmentsData +
+        RS +
+        EOT;
+
+    // Show serial number for confirmation
+    console.log('Serial Number:', serialNumber);
+    console.log('Final QR Data:', qrData);
+
+    // Generate barcode
+    const qrResult = document.getElementById('qrResult');
+    qrResult.innerHTML = ''; // clear old
+
+    const canvas = document.createElement('canvas');
+    qrResult.appendChild(canvas);
+
+    try {
         bwipjs.toCanvas(canvas, {
-          bcid: 'datamatrix',
-          text: qrData,
-          encoding: 'c40',
-          rows: 52,
-          columns: 52,
-          ecc: 'ecc200',
-          parse: false,
-          macro: false,
-          scale: 5,
-          padding: 5
+            bcid: 'datamatrix',
+            text: qrData,
+            encoding: 'c40',
+            scale: 5,
+            padding: 5,
+            ecc: 'ecc200',
         });
-      } catch (e) {
-        alert(`Error in generating Data Matrix: ${e.message}`);
-      }
+    } catch (e) {
+        alert('Error generating Data Matrix: ' + e.message);
     }
+}
 
-    function identifyEngine() {
-      const inputString = document.getElementById('inputString').value;
-      const resultsDiv = document.getElementById('results');
-      const engineInfoDiv = document.getElementById('engineInfo');
-      const pantherMarkers = ['ARA', 'AMA', 'ANA', 'CB', 'DB', 'LB', 'MB'];
-      const lionMarkers = ['FA', 'FB', 'BA', 'BEA'];
-      let engineType = null;
-      let segments = [];
-      const segmentPrefixes = [
-        ':08000000', ':08000800', ':08001000',
-        ':08001800', ':08002000', ':08002800'
-      ];
-
-      let serialNumber = '';
-      let engineCode = '';
-
-      // Function to extract serial number for Lion and Panther (default)
-      function extractSerialFromT(str) {
-        const tIndex = str.indexOf('T');
-        if (tIndex === -1 || tIndex + 17 > str.length) return null;
-        return str.substring(tIndex + 1, tIndex + 17);
-      }
-
-      // Check for Panther start with CSEPA serial rule
-      if (inputString.startsWith('CSEPA') && inputString.length >= 16) {
-        engineType = 'Panther';
-        serialNumber = inputString.substring(0, 16);
-        // Try to find marker after serial to extract segments
-        let foundMarker = null;
-        for (const marker of pantherMarkers) {
-          if (inputString.includes(marker)) {
-            foundMarker = marker;
-            break;
-          }
-        }
-        if (!foundMarker) {
-          resultsDiv.innerHTML = 'No valid Panther engine code marker found.';
-          engineInfoDiv.innerHTML = '';
-          return;
-        }
-        engineCode = foundMarker;
-        // Extract segments after marker
-        const markerIndex = inputString.indexOf(foundMarker);
-        let relevantPart = inputString.substring(markerIndex + foundMarker.length);
-        relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
-        const allSegments = relevantPart.match(/.{16}/g) || [];
-        segments = allSegments.slice(0, 4);
-        if (segments.length !== 4 || !segments.every(seg => seg.length === 16)) {
-          resultsDiv.innerHTML = "Invalid Panther input: Requires 4 segments of 16 characters each.";
-          engineInfoDiv.innerHTML = '';
-          return;
-        }
-      } else {
-        // Try Panther by markers (default serial extraction from 'T')
-        for (const marker of pantherMarkers) {
-          if (inputString.includes(marker)) {
-            engineType = 'Panther';
-            engineCode = marker;
-            serialNumber = extractSerialFromT(inputString);
-            if (!serialNumber) {
-              resultsDiv.innerHTML = "Could not extract serial number after 'T' for Panther.";
-              engineInfoDiv.innerHTML = '';
-              return;
-            }
-            // Extract segments
-            const markerIndex = inputString.indexOf(marker);
-            let relevantPart = inputString.substring(markerIndex + marker.length);
-            relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
-            const allSegments = relevantPart.match(/.{16}/g) || [];
-            segments = allSegments.slice(0, 4);
-            if (segments.length !== 4 || !segments.every(seg => seg.length === 16)) {
-              resultsDiv.innerHTML = "Invalid Panther input: Requires 4 segments of 16 characters each.";
-              engineInfoDiv.innerHTML = '';
-              return;
-            }
-            break;
-          }
-        }
-
-        // Try Lion
-        if (!engineType) {
-          for (const marker of lionMarkers) {
-            if (inputString.includes(marker)) {
-              engineType = 'Lion';
-              engineCode = marker;
-              serialNumber = extractSerialFromT(inputString);
-              if (!serialNumber) {
-                resultsDiv.innerHTML = "Could not extract serial number after 'T' for Lion.";
-                engineInfoDiv.innerHTML = '';
-                return;
-              }
-              // Find 'Z' for Lion segments
-              const zIndex = inputString.indexOf('Z');
-              if (zIndex === -1) {
-                resultsDiv.innerHTML = "Invalid Lion input: 'Z' not found.";
-                engineInfoDiv.innerHTML = '';
-                return;
-              }
-              const remainingString = inputString.substring(zIndex + 1);
-              const allSegments = remainingString.match(/.{16}/g) || [];
-              segments = allSegments.slice(0, 6);
-              if (segments.length !== 6 || !segments.every(seg => seg.length === 16)) {
-                resultsDiv.innerHTML = "Invalid Lion input: Requires 6 segments of 16 characters each.";
-                engineInfoDiv.innerHTML = '';
-                return;
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      if (engineType) {
-        let output = '';
-        output += engineType === 'Lion' ? ':020000040000FA\n' : ':020000040001F9\n';
-        segments.forEach((segment, index) => {
-          const prefix = segmentPrefixes[index] || ':08000000';
-          const dataRecord = `${prefix}${segment}`;
-          const checksum = calculateChecksum(dataRecord.slice(1));
-          output += `${dataRecord}${checksum}\n`;
-        });
-        output += ':00000001FF';
-
-        engineInfoDiv.innerHTML = `Engine Type: ${engineType} (Valid)<br>Engine Code: ${engineCode}<br>Serial Number: ${serialNumber}`;
-        resultsDiv.innerHTML = `<pre>${output}</pre>`;
-
-        generateQRCode(engineType, serialNumber, segments, engineCode);
-      } else {
-        engineInfoDiv.innerHTML = '';
-        resultsDiv.innerHTML = "Engine type not identified (no valid markers found).";
-        document.getElementById('qrCodeResult').innerHTML = '';
-      }
-    }
-  </script>
+// Initialize engine codes on load
+populateEngineCodes();
+</script>
 </body>
 </html>
