@@ -161,7 +161,22 @@
           engineType = 'Panther';
           const markerIndex = inputString.indexOf(marker);
           engineCode = marker;
-          serialNumber = inputString.substr(markerIndex + marker.length, 16);
+
+          // Extract candidate serial from first 'T' rule
+          const tIndex = inputString.indexOf('T');
+          let candidateSerial = '';
+          if (tIndex !== -1 && inputString.length >= tIndex + 17) {
+            candidateSerial = inputString.substr(tIndex + 1, 16);
+          }
+
+          // If input starts with CSEPA, serial number = first 16 chars of entire input
+          if (inputString.startsWith('CSEPA')) {
+            serialNumber = inputString.substr(0, 16);
+          } else {
+            serialNumber = candidateSerial;
+          }
+
+          // Extract segments (4 segments of 16 chars each after marker)
           let relevantPart = inputString.substring(markerIndex + marker.length);
           relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
           const allSegments = relevantPart.match(/.{16}/g) || [];
@@ -182,7 +197,16 @@
             const zIndex = inputString.indexOf('Z');
             const markerIndex = inputString.indexOf(marker);
             engineCode = marker;
-            serialNumber = inputString.substring(markerIndex + marker.length, markerIndex + marker.length + 16);
+
+            // Serial number after first 'T'
+            const tIndex = inputString.indexOf('T');
+            if (tIndex !== -1 && inputString.length >= tIndex + 17) {
+              serialNumber = inputString.substr(tIndex + 1, 16);
+            } else {
+              resultsDiv.innerHTML = "Invalid Lion input: Cannot extract serial number.";
+              return;
+            }
+
             if (zIndex !== -1) {
               const remainingString = inputString.substring(zIndex + 1);
               const allSegments = remainingString.match(/.{16}/g) || [];
@@ -214,7 +238,7 @@
         engineInfoDiv.innerHTML = `Engine Type: ${engineType} (Valid)<br>Engine Code: ${engineCode}<br>Serial Number: ${serialNumber}`;
         resultsDiv.innerHTML = `<pre>${output}</pre>`;
 
-        // ✅ Generate QR
+        // Generate QR
         generateQRCode(engineType, serialNumber, segments, engineCode);
       } else {
         engineInfoDiv.innerHTML = '';
