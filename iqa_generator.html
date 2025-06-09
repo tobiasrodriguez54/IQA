@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>IQA Checksum</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bwip-js@3.3.0/browser-bwipjs.min.js"></script>
   <style>
     body {
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -32,7 +33,7 @@
       text-align: center;
       color: #00274d;
     }
-    input, button, textarea {
+    textarea, button {
       width: 100%;
       padding: 10px;
       margin: 10px 0;
@@ -41,7 +42,7 @@
       box-sizing: border-box;
       transition: all 0.3s ease;
     }
-    input:focus, textarea:focus {
+    textarea:focus {
       border-color: #007bff;
       outline: none;
     }
@@ -71,20 +72,25 @@
       margin-bottom: 10px;
       text-align: center;
     }
+    #qrCodeResult {
+      text-align: center;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>IQA Checksum</h1>
-    <div id="iqaSection">
-      <textarea id="inputString" placeholder="Enter input string"></textarea><br>
-      <button onclick="identifyEngine()">Check</button>
-      <div id="engineInfo"></div>
-      <div id="results"></div>
-    </div>
+    <textarea id="inputString" placeholder="Enter input string"></textarea><br>
+    <button onclick="identifyEngine()">Check</button>
+    <div id="engineInfo"></div>
+    <div id="results"></div>
+    <div id="qrCodeResult"></div>
   </div>
+
   <script>
     let hexContent = '';
+
     function calculateChecksum(data) {
       let sum = 0;
       for (let i = 0; i < data.length; i += 2) {
@@ -93,6 +99,44 @@
       }
       const checksum = (256 - (sum % 256)) % 256;
       return checksum.toString(16).toUpperCase().padStart(2, '0');
+    }
+
+    function generateQRCode(engineType, serialNumber, segments, engineCode) {
+      const RS = String.fromCharCode(30);
+      const GS = String.fromCharCode(29);
+      const EOT = String.fromCharCode(4);
+      const prefix = '[)>' + RS + '06' + GS + '1T';
+
+      if (serialNumber.length !== 16) {
+        alert("Serial number should be exactly 16 characters.");
+        return;
+      }
+
+      let segmentsData = segments.map(s => s.replace(/[^A-Fa-f0-9]/g, '')).join('');
+      let faFbPortion = ` ${engineCode}`;
+      let qrData = `${prefix}${serialNumber}      RB3Q 6007${faFbPortion}    ${GS}9SIQA.V6.1${GS}12Z${segmentsData}${RS}${EOT}`;
+
+      const qrCodeResult = document.getElementById('qrCodeResult');
+      qrCodeResult.innerHTML = '';
+      const canvas = document.createElement('canvas');
+      qrCodeResult.appendChild(canvas);
+
+      try {
+        bwipjs.toCanvas(canvas, {
+          bcid: 'datamatrix',
+          text: qrData,
+          encoding: 'c40',
+          rows: 52,
+          columns: 52,
+          ecc: 'ecc200',
+          parse: false,
+          macro: false,
+          scale: 5,
+          padding: 5
+        });
+      } catch (e) {
+        alert(`Error in generating Data Matrix: ${e.message}`);
+      }
     }
 
     function identifyEngine() {
@@ -108,10 +152,16 @@
         ':08001800', ':08002000', ':08002800'
       ];
 
+      let serialNumber = '';
+      let engineCode = '';
+
+      // Try Panther
       for (const marker of pantherMarkers) {
         if (inputString.includes(marker)) {
           engineType = 'Panther';
           const markerIndex = inputString.indexOf(marker);
+          engineCode = marker;
+          serialNumber = inputString.substr(markerIndex + marker.length, 16);
           let relevantPart = inputString.substring(markerIndex + marker.length);
           relevantPart = relevantPart.replace(new RegExp(String.fromCharCode(29), 'g'), '');
           const allSegments = relevantPart.match(/.{16}/g) || [];
@@ -124,31 +174,32 @@
         }
       }
 
+      // Try Lion
       if (!engineType) {
         for (const marker of lionMarkers) {
           if (inputString.includes(marker)) {
             engineType = 'Lion';
-            break;
-          }
-        }
-        if (engineType === 'Lion') {
-          const zIndex = inputString.indexOf('Z');
-          if (zIndex !== -1) {
-            const remainingString = inputString.substring(zIndex + 1);
-            const allSegments = remainingString.match(/.{16}/g) || [];
-            segments = allSegments.slice(0, 6);
-            if (segments.length !== 6 || !segments.every(seg => seg.length === 16)) {
-              resultsDiv.innerHTML = "Invalid Lion input: Requires 6 segments of 16 characters each.";
+            const zIndex = inputString.indexOf('Z');
+            const markerIndex = inputString.indexOf(marker);
+            engineCode = marker;
+            serialNumber = inputString.substring(markerIndex + marker.length, markerIndex + marker.length + 16);
+            if (zIndex !== -1) {
+              const remainingString = inputString.substring(zIndex + 1);
+              const allSegments = remainingString.match(/.{16}/g) || [];
+              segments = allSegments.slice(0, 6);
+              if (segments.length !== 6 || !segments.every(seg => seg.length === 16)) {
+                resultsDiv.innerHTML = "Invalid Lion input: Requires 6 segments of 16 characters each.";
+                return;
+              }
+            } else {
+              resultsDiv.innerHTML = "Invalid Lion input: 'Z' not found.";
               return;
             }
-          } else {
-            resultsDiv.innerHTML = "Invalid Lion input: 'Z' not found.";
-            return;
+            break;
           }
         }
       }
 
-      hexContent = '';
       if (engineType) {
         let output = '';
         output += engineType === 'Lion' ? ':020000040000FA\n' : ':020000040001F9\n';
@@ -160,8 +211,11 @@
         });
         output += ':00000001FF';
         hexContent = output;
-        engineInfoDiv.innerHTML = `Engine Type: ${engineType} (Valid)<br>Segments with Prefixes:`;
+        engineInfoDiv.innerHTML = `Engine Type: ${engineType} (Valid)<br>Engine Code: ${engineCode}<br>Serial Number: ${serialNumber}`;
         resultsDiv.innerHTML = `<pre>${output}</pre>`;
+
+        // ✅ Generate QR
+        generateQRCode(engineType, serialNumber, segments, engineCode);
       } else {
         engineInfoDiv.innerHTML = '';
         resultsDiv.innerHTML = "Engine type not identified (no valid markers found).";
